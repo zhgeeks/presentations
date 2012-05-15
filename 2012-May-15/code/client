@@ -45,7 +45,7 @@ start=`date +"%s"`
 while (( 1 )); do
     result=`curl -s http://zhgeeks-1761963549.eu-west-1.elb.amazonaws.com/work`
     echo $result
-    sleep 0.25
+    sleep 0.15
     now=`date +"%s"`
     if (( now > end )); then
         break
