@@ -1,0 +1,202 @@
+#!/bin/bash
+
+# Copyright (c) 2012, Muharem Hrnjadovic <mh@star.io>
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#     Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#     Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+help() {
+cat <<HSD
+`basename $0` initialises the auto-scaling infrastucture for the zhgeeks
+presentation.
+
+The command line arguments are as follows:
+
+    --action=[setup|teardown]   What to do [default: "setup"]
+
+    --ami=ami           The AMI to use [default: ami-a1c5fdd5]
+    --azs=az1,az2       Availability zones [default "<region>a"]
+    --base-name=name    Will be used to name launch config and auto-scaling
+                        group.
+    --elb-name=name     Name of the elastic load balancer to use
+                        [default "elb-<base-name>"]
+    --group=group       Name of the AWS security group to use
+    --region=region     Name of the AWS regions to use [default: eu-west-1]
+HSD
+exit 0
+}
+
+if [ $# -eq 0 ]; then
+    help
+fi
+
+action="setup"
+azs=""
+base_name=""
+elb_name=""
+group=""
+region="eu-west-1"
+ami="ami-a1c5fdd5"
+
+
+# Process the command-line arguments
+for i in $*
+do
+    case $i in
+    --action=*)
+        action=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    --ami=*)
+        ami=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    --azs=*)
+        azs=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    --base-name=*)
+        base_name=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    --elb-name=*)
+        elb_name=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    --group=*)
+        group=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    --region=*)
+        region=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+    -h|--help)
+        help
+        ;;
+    *)
+        echo "!! Uknown option: " $i
+        exit 2
+        ;;
+    esac
+done
+
+# Mandatory command-line args
+if [ -z "$base_name" ]; then
+    echo "!! Please specify a base name."
+    exit 3
+fi
+
+# Derived parameters
+if [ -z "$elb_name" ]; then
+    elb_name="elb-$base_name"
+fi
+
+if [ -z "$azs" ]; then
+    azs="${region}a"
+fi
+
+
+# Do the actual work (setup|teardown)
+
+CODE_DIR="`pwd`"
+
+if [ "$action" == "setup" ]; then
+    if [ -z "$group" ]; then
+        echo "!! Please specify a security group."
+        exit 4
+    fi
+
+    as-create-launch-config "lc-$base_name" \
+        --group $group \
+        --image-id $ami \
+        --instance-type m1.small \
+        --key aws-ec2 \
+        --user-data-file $CODE_DIR/code/cloud-config.txt \
+        –-health-check-type ELB \
+        –-grace-period 300 \
+        --region $region
+
+    as-create-auto-scaling-group "asg-$base_name" \
+        --launch-configuration "lc-$base_name" \
+        --load-balancers $elb_name \
+        --min-size 1 \
+        --max-size 4 \
+        --tag "k=name, v=$base_name, p=true" \
+        --availability-zones $azs \
+        --region $region
+
+    # Scale up policy
+    upp_arn=`as-put-scaling-policy "sp-UP-$base_name" \
+        --adjustment 1 \
+        --auto-scaling-group "asg-$base_name" \
+        --type ChangeInCapacity \
+        --cooldown 60 \
+        --region $region`
+
+    mon-put-metric-alarm ZhgeeksHighCPUAlarm \
+        --alarm-actions $upp_arn \
+        --metric-name CPUUtilization \
+        --namespace "AWS/EC2" \
+        --statistic Average \
+        --period 60 \
+        --evaluation-periods 1 \
+        --threshold 60 \
+        --comparison-operator GreaterThanOrEqualToThreshold \
+        --dimensions "AutoScalingGroupName=asg-$base_name" \
+        --region $region
+
+    # Scale down policy
+    dnp_arn=`as-put-scaling-policy "sp-DOWN-$base_name" \
+        --adjustment=-1 \
+        --auto-scaling-group "asg-$base_name" \
+        --type ChangeInCapacity \
+        --cooldown 60 \
+        --region $region`
+
+    mon-put-metric-alarm ZhgeeksLowCPUAlarm \
+        --alarm-actions $dnp_arn \
+        --metric-name CPUUtilization \
+        --namespace "AWS/EC2" \
+        --statistic Average \
+        --period 60 \
+        --evaluation-periods 1 \
+        --threshold 50 \
+        --comparison-operator LessThanOrEqualToThreshold \
+        --dimensions "AutoScalingGroupName=asg-$base_name" \
+        --region $region
+else
+    # The teardown case
+    as-delete-auto-scaling-group "asg-$base_name" \
+        --force \
+        --force-delete \
+        --region $region
+
+    as-delete-launch-config "lc-$base_name" \
+        --force \
+        --region $region
+
+    as-delete-policy "sp-UP-$base_name" \
+        --force \
+        --auto-scaling-group "asg-$base_name" \
+        --region $region
+
+    as-delete-policy "sp-DOWN-$base_name" \
+        --force \
+        --auto-scaling-group "asg-$base_name" \
+        --region $region
+
+    mon-delete-alarms ZhgeeksHighCPUAlarm ZhgeeksLowCPUAlarm --force
+fi

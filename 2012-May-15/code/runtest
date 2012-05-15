@@ -1,0 +1,110 @@
+#!/bin/bash
+
+# Copyright (c) 2012, Muharem Hrnjadovic <mh@star.io>
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#     Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#     Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+declare -i offset
+declare -i duration
+
+if [ $# -eq 0 ]; then
+    (( offset = 120 ))
+else
+    (( offset = "$1" ))
+fi
+
+stats_start_date=`date --utc +"%Y-%m-%dT%H:%M:00Z"`
+echo "test run started at $stats_start_date" > last_run.stats
+
+# Client A (delay: 0 * offset, duration: 7 * offset)
+(( duration = 7 * offset ))
+gnome-terminal --title=A --geometry 36x25 -x ./client $duration AAA 2>/dev/null
+
+echo ""
+date
+echo "started client A, it will run for $duration seconds; sleeping $offset seconds before starting client B"
+
+./track_instances $duration > last_run.instances &
+
+sleep $offset
+
+# Client B (delay: 1 * offset, duration: 4 * offset)
+(( duration = 4 * offset ))
+gnome-terminal --title=B --geometry 36x25 -x ./client $duration BBB 2>/dev/null
+
+echo ""
+date
+echo "started client B, it will run for $duration seconds; sleeping $offset seconds before starting client C"
+
+sleep $offset
+
+# Client C (delay: 2 * offset, duration: 4 * offset)
+(( duration = 4 * offset ))
+gnome-terminal --title=C --geometry 36x25 -x ./client $duration CCC 2>/dev/null
+
+echo ""
+date
+echo "started client C, it will run for $duration seconds; sleeping $offset seconds before starting client D"
+
+sleep $offset
+
+# Client D (delay: 3 * offset, duration: 1 * offset)
+(( duration = 1 * offset ))
+gnome-terminal --title=D --geometry 36x25 -x ./client $duration DDD 2>/dev/null
+
+echo ""
+date
+echo "started client D, it will run for $duration seconds"
+
+sleep $offset
+
+echo ""
+date
+echo "client D terminated"
+
+while ((1)); do
+    echo ""
+    date
+    ps ax | grep "client " | egrep -v '(dhclient|grep)'
+    sleep 15
+    # Are we done? All clients terminated?
+    numclients=`ps ax | grep "client " | egrep -v '(dhclient|grep)' | wc -l`
+    if (( numclients == 0 )); then
+        break
+    fi
+done
+
+asg_name=`as-describe-auto-scaling-groups | grep AUTO-SCALING-GROUP | grep asg- | awk '{ print $2 }'`
+if [ ! -z "$asg_name" ]; then
+    echo "" >> last_run.stats
+    echo "$asg_name" >> last_run.stats
+    mon-get-stats --metric-name CPUUtilization --namespace AWS/EC2 --dimensions AutoScalingGroupName=$asg_name --statistics Average --start-time $stats_start_date >> last_run.stats
+fi
+
+for iid in `grep '^INSTANCE ' last_run.instances | sort -u | awk '{ print $2 }' | sort -u`; do
+    echo "" >> last_run.stats
+    echo $iid >> last_run.stats
+    mon-get-stats --metric-name CPUUtilization --namespace AWS/EC2 --dimensions InstanceId=$iid --statistics Average --start-time $stats_start_date >> last_run.stats
+done
+
+mon-describe-alarm-history | head -n 50 > last_run.alarms
