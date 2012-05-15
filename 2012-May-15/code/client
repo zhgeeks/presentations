@@ -43,7 +43,7 @@ start=`date +"%s"`
 (( end = start + duration ))
 
 while (( 1 )); do
-    result=`curl -s http://beecae8u-616433381.eu-west-1.elb.amazonaws.com:30000/work`
+    result=`curl -s http://zhgeeks-1761963549.eu-west-1.elb.amazonaws.com/work`
     echo $result
     sleep 0.25
     now=`date +"%s"`
