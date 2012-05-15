@@ -53,7 +53,7 @@ action="setup"
 azs=""
 base_name=""
 elb_name=""
-group=""
+group="zhgeeks"
 region="eu-west-1"
 ami="ami-a1c5fdd5"
 
@@ -111,8 +111,6 @@ fi
 
 # Do the actual work (setup|teardown)
 
-CODE_DIR="`pwd`"
-
 if [ "$action" == "setup" ]; then
     if [ -z "$group" ]; then
         echo "!! Please specify a security group."
@@ -124,7 +122,7 @@ if [ "$action" == "setup" ]; then
         --image-id $ami \
         --instance-type m1.small \
         --key aws-ec2 \
-        --user-data-file $CODE_DIR/code/cloud-config.txt \
+        --user-data-file cloud-config.txt \
         –-health-check-type ELB \
         –-grace-period 300 \
         --region $region
