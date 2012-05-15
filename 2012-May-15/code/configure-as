@@ -38,8 +38,9 @@ The command line arguments are as follows:
     --base-name=name    Will be used to name launch config and auto-scaling
                         group.
     --elb-name=name     Name of the elastic load balancer to use
-                        [default "elb-<base-name>"]
+                        [default "<base-name>"]
     --group=group       Name of the AWS security group to use
+                        [default "<base-name>"]
     --region=region     Name of the AWS regions to use [default: eu-west-1]
 HSD
 exit 0
@@ -53,7 +54,7 @@ action="setup"
 azs=""
 base_name=""
 elb_name=""
-group="zhgeeks"
+group=""
 region="eu-west-1"
 ami="ami-a1c5fdd5"
 
@@ -102,6 +103,10 @@ fi
 # Derived parameters
 if [ -z "$elb_name" ]; then
     elb_name="$base_name"
+fi
+
+if [ -z "$group" ]; then
+    group="$base_name"
 fi
 
 if [ -z "$azs" ]; then
