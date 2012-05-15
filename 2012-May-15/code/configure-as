@@ -146,7 +146,7 @@ if [ "$action" == "setup" ]; then
         --adjustment 1 \
         --auto-scaling-group "asg-$base_name" \
         --type ChangeInCapacity \
-        --cooldown 60 \
+        --cooldown 30 \
         --region $region`
 
     mon-put-metric-alarm ZhgeeksHighCPUAlarm \
@@ -166,7 +166,7 @@ if [ "$action" == "setup" ]; then
         --adjustment=-1 \
         --auto-scaling-group "asg-$base_name" \
         --type ChangeInCapacity \
-        --cooldown 60 \
+        --cooldown 30 \
         --region $region`
 
     mon-put-metric-alarm ZhgeeksLowCPUAlarm \
