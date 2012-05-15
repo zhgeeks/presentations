@@ -101,7 +101,7 @@ fi
 
 # Derived parameters
 if [ -z "$elb_name" ]; then
-    elb_name="elb-$base_name"
+    elb_name="$base_name"
 fi
 
 if [ -z "$azs" ]; then

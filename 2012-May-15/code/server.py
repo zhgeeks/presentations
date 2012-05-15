@@ -34,20 +34,9 @@ def note(format, *args):
 
 
 class RequestHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        self.broken = False
-        print "i: %s" % self.broken
-
     def do_GET(self):
         if self.path == '/ping':
-            print "g: %s" % self.broken
-            if self.broken:
-                self.respond(httplib.INTERNAL_SERVER_ERROR, 'broken')
-            else:
-                self.respond(httplib.OK, 'pong')
-        elif self.path == '/breakserver':
-            self.broken = True
-            self.respond(httplib.OK, 'break server')
+            self.respond(httplib.OK, 'pong')
         elif self.path == '/work':
             self.work()
         else:
